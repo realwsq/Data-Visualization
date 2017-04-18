@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+<head>
+
+<svg id="drawCanvas" width="960" height="2000"><path></path></svg>
+
+<script src="flare.js"></script>
+<script src="display.js"></script>
+
+</head>
+<body>
+
+<script>
+var size = [860, 2000];
+var d = 10;
+var left = 50;
+// leave some whiteSpace
+// left 50 right 50
+
+var transformNodeY = function (node, dy) {
+    node.y += dy;
+}
+
+var transformY = function (tree, dy) {
+    transformNodeY(tree, dy);
+    var childs = tree.children;
+    if (!childs) return;
+    for (var i = 0; i < childs.length; i++) {
+        transformY(childs[i], dy);
+    }
+}
+
+var hierarchy = function (tree) {
+    var stack = [tree], node, nodes = [];
+    // nodes store all the nodes
+    tree.depth = 0;
+    tree.y = size[1] / 2;
+
+    while ((node = stack.pop()) != null) {
+        nodes.push(node);
+        var n, childs, child;
+        if (childs = node.children) {
+            n = childs.length;
+            while(--n >= 0) {
+                stack.push(child = childs[n]);
+                child.depth = node.depth + 1;
+                child.parent = node;
+                child.y = node.y + (n - (childs.length - 1) / 2) * d; 
+                // in order to pic tree
+            }
+            node.children = childs;
+        } 
+    }
+
+    tree.getHeight = function () {
+        var n = nodes.length, height = 0, temp;
+        while(--n >= 0) {
+            if ((temp = nodes[n].depth + 1) > height)
+                height = temp;
+        }
+        return height;
+    }
+
+    tree.getIntervalX = function () {
+        return size[0] / tree.getHeight();
+    }
+
+    tree.getX = function () {
+        var intervalX = tree.getIntervalX();
+        for (var i = 0; i < nodes.length; i++) {
+            nodes[i].x = nodes[i].depth * intervalX;
+        }
+    }
+}(tree);
+
+
+var treeLayout = function (tree) {
+    // http://www.tuicool.com/articles/euMvay
+    // thanks a lot!!
+    var checkConflict = function (tree) {
+        if (!tree.children) return;
+        var childs = tree.children;
+        for (var i = 0; i < childs.length; i++) {
+            checkConflict(childs[i]);
+            getContour(childs[i]);
+            var move = checkUpContour(tree, i);
+            if (move) {
+                moveTree(childs[i], move);  
+                updateContour(childs[i], move); 
+            }
+        }
+        transformMotherT(tree);
+    }
+    var getContour = function (tree) {
+        tree.downContour = [tree.y];
+        tree.upContour = [tree.y];
+        if (!tree.children) return;
+        var treeDC = tree.downContour;
+        var treeUC = tree.upContour;
+        var childs = tree.children;
+        for (var i = 0; i < childs.length; i++) {
+            var childsDC = childs[i].downContour;
+            var childsUC = childs[i].upContour;
+            var l = childsDC.length < treeDC.length - 1 ? childsDC.length: treeDC.length - 1;
+            for (var li = 0; li < l; li++) {
+                if (childsDC[li] > treeDC[li + 1]) treeDC[li + 1] = childsDC[li];
+                if (childsUC[li] < treeUC[li + 1]) treeUC[li + 1] = childsUC[li];
+
+            }
+            for (li = treeDC.length - 1; li < childsDC.length; li++) {
+                treeDC.push(childsDC[li]);
+                treeUC.push(childsUC[li]);
+            }
+        }
+    }
+    var checkUpContour = function (tree, i) {
+        var uc = tree.children[i].upContour;
+        var move = 0;
+        if (!i) {
+            for (var ci = 0; ci < uc.length; ci++) {
+                if (-uc[ci] + d > move) move = -uc[ci] + d;
+            }
+        }
+        for (var childI = 0; childI < i; childI++) {
+            var dc = tree.children[childI].downContour;
+            var l = dc.length < uc.length ? dc.length : uc.length;
+            for (var ci = 0; ci < l; ci++) {
+                if (dc[ci] - uc[ci] + d > move) move = dc[ci] - uc[ci] + d;
+            }
+        }
+        return move;
+    }
+    var transformMotherT = function(t) {
+        var cymax = cymin = t.children[0].y;
+        for (ci = 0; ci < t.children.length; ci++) {
+            if (t.children[ci].y < cymin) cymin = t.children[ci].y;
+            if (t.children[ci].y > cymax) cymax = t.children[ci].y;
+        }
+        t.y = (cymax + cymin) / 2;
+    }
+    var moveTree = function (tree, move) {
+        transformY(tree, move);
+    }
+    var updateContour = function (tree, move) {
+        var dc = tree.downContour;
+        var uc = tree.upContour;
+        for (var ci = 0; ci < dc.length; ci++) {
+            dc[ci] += move;
+            uc[ci] += move;
+        }
+        if (!tree.children) return;
+        var childs = tree.children;
+        for (var i = 0; i < childs.length; i++) {
+            updateContour(childs[i], move);
+        }
+    }
+    var layout = function (tree) {
+        var getMax = function (a) {
+            var max = 0;
+            for (var i = 0 ; i < a.length; i++) {
+                if (a[i] > max) max = a[i]
+            }
+            return max;
+        }
+        var c = tree.children[0].upContour;
+        var move = getMax(c);
+        tree.getX();
+        transformY(tree, 100-move);
+    }
+    checkConflict(tree);
+    layout(tree);
+}(tree);
+
+var dispaly = function (tree) {
+    var displayLink = function () {
+        var stack = [tree], node, nodes = [];
+        while ((node = stack.pop()) != null) {
+            nodes.push(node);
+            var s = node;
+            var n, childs, t;
+            if (childs = node.children) {
+                n = childs.length;
+                while(--n >= 0) {
+                    stack.push(t = childs[n]);
+                    drawCurve(s.x, s.y, t.x, t.y, "#ccc");
+                }
+            } 
+        }
+        return nodes;
+    }
+    var displayNodes = function (nodes) {
+        var n = nodes.length;    
+        for (var i = 0; i < n; i++) {
+            if (nodes[i].children) {
+                nodes[i].color = '#4682b4';
+                displayNode(nodes[i]);
+                displayText(nodes[i].name, nodes[i].x + 8, nodes[i].y);
+            }
+            else {
+                nodes[i].color = '#a23454';
+                displayNode(nodes[i]);
+                displayText(nodes[i].name, nodes[i].x + 8, nodes[i].y)
+            }
+        }
+    }
+    var transformNodeX = function (node, dx) {
+        node.x += dx;
+    }
+    var transformTreeX = function (tree, dx) {
+        var stack = [tree];
+        var node, childs;
+        while (node = stack.pop()) {
+            transformNodeX(node, dx);
+            if (!(childs = node.children)) continue;
+            for (var i = 0; i < childs.length; i++) {
+                stack.push(childs[i]);
+            }
+        }
+    }
+    transformTreeX(tree, left);
+    var nodes = displayLink();
+    displayNodes(nodes);
+}(tree);
+
+
+
+</script>
+
+</body>
+</html>

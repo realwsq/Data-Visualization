@@ -1,0 +1,217 @@
+<!doctype html>
+<html>
+<head>
+<script src="data.js"></script>
+<script src="main.js"></script>
+<script src="BSpline.js"></script>
+<script src="../display.js"></script>
+
+</head>
+<canvas id="myCanvas" width="1000" height="1000" style="border:1px solid #d3d3d3;"></canvas>
+
+<body>
+
+<script>
+var canvas = document.getElementById('myCanvas');
+var ctx = canvas.getContext('2d');
+
+var CANVASWIDTH = 1000;
+var CANVASHEIGHT = 1000;
+var NUM_ITEM = data.length;
+var LAYERRADIUS = 90;
+var nodeRadius = 2 * Math.PI / data.length;
+var RADIUS = 350;
+var CENTERX = CANVASWIDTH / 2;
+var CENTERY = CANVASHEIGHT / 2;
+
+
+Function.prototype.method = function(name, func) {
+    this.prototype[name] = func;
+    return this;
+}
+
+Array.method("loop", function() {
+    var i;
+    var f;
+    for (i = 0; i < this.length; i++) {
+        for (f = 0; f < arguments.length; f++) {
+            arguments[f](this[i]);
+        }
+    }
+});
+
+var item = function(tar) {
+    var fullName = tar["name"];
+    var ancestor = fullName.substring(0, i = fullName.lastIndexOf("."));
+    var name = fullName.substring(i+1);
+    var incoming = tar["imports"];
+    var outgoing = [];
+
+    var that = {};
+
+    that.push_outgoing = function (fullName) {
+        outgoing.push(fullName);
+    } 
+    that.get_incoming = function () {
+        return incoming;
+    }   
+    that.getFullName = function () {
+        return fullName;
+    }
+    that.getName = function () {
+        return name;
+    }
+    that.getAncestor = function () {
+        return ancestor;
+    }
+
+    return that;
+};
+
+var washData = function () {
+    var items = {};
+    data.loop(function(tar) {
+        items[tar["name"].split('.').pop()] = item(tar);
+    });
+    for (var obj in items) {
+        items[obj].get_incoming().loop(function(tar) {
+            tar = tar.substring(tar.lastIndexOf(".") + 1);
+            items[tar].push_outgoing(items[obj].getFullName());
+        });
+    }
+    return items;
+};
+
+var tearAndPutinMap = function(item, map) {
+    var find = function (array, v) {
+        var i = 0;
+        while (i < array.length && array[i] != v) {
+            i++;
+        }
+        if (i < array.length) return true;
+        else return false;
+    }
+    var addAdjacentNodes = function(fromN, toN, last) {
+        if (!last) {
+            if (!map[fromN]["to"]) map[fromN]["to"] = [];
+            map[fromN]["to"].push(toN);
+        } else {
+            if (!map[last+'_'+fromN]["to"]) map[last+'_'+fromN]["to"] = [];
+            map[last+'_'+fromN]["to"].push(toN);
+        }
+        map[fromN +'_'+toN] = {};
+        map[fromN +'_'+toN]["from"] = [fromN];
+    }
+    var path = item.getAncestor().split('.');
+    if (find(map[path[0]]["to"], path[1]) == false) {
+        addAdjacentNodes(path[0],path[1]);
+    }
+    for (var i = 1; i < path.length-1; i++) {
+        if(!map[path[i-1]+'_'+path[i]]["to"] || !find(map[path[i-1]+'_'+path[i]]["to"], path[i+1])) {
+            addAdjacentNodes(path[i], path[i+1], path[i-1]);
+        }
+    }
+
+    if (!map[path[i-1]+'_'+path[i]]["leaf"]) 
+        map[path[i-1]+'_'+path[i]]["leaf"] = [item.getName()];
+    else if (!find(map[path[i-1]+'_'+path[i]]["leaf"], item.getName()))
+        map[path[i-1]+'_'+path[i]]["leaf"].push(item.getName());
+}
+
+var divideClass = function (items) {
+    var map = {flare: {to: []}};
+
+    for (var obj in items) {
+        tearAndPutinMap(items[obj], map);
+    }
+
+    return map;
+}
+
+var settleDownPlaces = function (map) {
+    var findPlace = function (name, fromAngle, tempRadius) {
+        var toAngle = fromAngle;
+        if (map[name]["to"]) {
+            var child = map[name]["to"];
+            for (var i = 0; i < child.length; i++) {
+                toAngle += 
+                    findPlace(name.split('_').pop()+'_'+child[i], toAngle, tempRadius + LAYERRADIUS);
+            }
+        }
+        if (map[name]["leaf"]) {
+            var leaf = map[name]["leaf"];
+            for (var i = 0; i < leaf.length; i++) {
+                var lx = RADIUS * Math.cos(toAngle) + CENTERX;
+                var ly = CENTERY - RADIUS * Math.sin(toAngle);
+                if (!nodePos[leaf[i]]) {
+                    nodePos[leaf[i]] = {};
+                    nodePos[leaf[i]]["pos"] = [lx, ly];
+                    displayText_canvas(ctx, leaf[i], lx, ly, "#4682b4", -toAngle)
+                    toAngle += nodeRadius;
+                }
+            }
+        }
+        var px = tempRadius * Math.cos((toAngle + fromAngle) / 2) + CENTERY;
+        var py = CENTERY - tempRadius * Math.sin((toAngle + fromAngle) / 2);
+        // displayText_canvas(ctx, name.split('_').pop(), px, py, "#555", 0);
+        map[name]["pos"] = [px, py];
+        return toAngle - fromAngle;
+    };
+
+    var nodePos = {};
+    findPlace("flare", 0, 0);
+    return nodePos;
+}
+
+var settleConnection = function (item) {
+    for (var leafName in item) {
+        var leaf = item[leafName];
+        var cntLs = leaf.get_incoming();
+        for (var cntli = 0; cntli < cntLs.length; cntli++) {
+            var cntL = item[cntLs[cntli].split(".").pop()];
+            var path = findPath(leaf, cntL);
+            drawPath(path);
+        }
+    }
+}
+
+var drawPath = function (path) {
+    var pathP = [nodePos[path[0]].pos];
+    for (var i = 1; i < path.length - 1; i++) {
+        pathP.push(map[path[i]].pos);
+    }
+    pathP.push(nodePos[path[path.length-1]].pos);
+    readin_pts(pathP);
+    readin(canvas, ctx, 3);
+}
+
+var findPath = function (l1, l2) {
+    var act_l1 = l1.getAncestor().split(".");
+    var act_l2 = l2.getAncestor().split(".");
+    var path = [l1.getName()];
+    for (var i = 0; i < act_l1.length && i < act_l2.length 
+        && act_l1[i] == act_l2[i]; i++);
+    if (act_l1[i-1] == act_l2[i-1]) {
+        for (var i1 = act_l1.length - 1; i1 >= i; i1--)
+            path.push(act_l1[i1-1]+'_'+act_l1[i1]);
+        if (i==1) path.push(act_l1[i-1]);
+        else path.push(act_l1[i-2]+'_'+act_l1[i-1]);
+        for (var i2 = i; i2 < act_l2.length; i2++) {
+            path.push(act_l2[i2-1]+'_'+act_l2[i2]);
+        }
+        path.push(l2.getName());
+    } else {
+        alert("wrong in find path");
+    }
+    return path;
+}
+
+
+var items = washData();
+var map = divideClass(items);
+var nodePos = settleDownPlaces(map);
+settleConnection(items);
+
+</script>
+</body>
+</html>

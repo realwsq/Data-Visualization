@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<canvas id="myCanvas" width="800" height="600" style="border:1px solid #d3d3d3;"></canvas>
+
+<script src="data.js"></script>
+<script>
+
+var canvas = {
+    id: document.getElementById("myCanvas"),
+    ctx: document.getElementById("myCanvas").getContext("2d"),
+    height: 600,
+    width: 800
+};
+
+Function.prototype.method = function(name, func) {
+    this.prototype[name] = func;
+    return this;
+};
+
+Array.method("loop", function (){
+    var i;
+    var f;
+    var len = this.length;
+    for (i = 0; i < len; i++) {
+        for (f = 0; f < arguments.length; f++) {
+            arguments[f](this[i], i);
+        }
+    }
+});
+
+Array.method("iter", function (func, initial){
+    var i;
+    var out = initial !== undefined ? initial : 0;
+    var len = this.length;
+    for (i = 0; i < len; i++) {
+    	out = func(this[i], out);
+    }
+    return out;
+});
+
+node.sumChild = function (nodeI) {
+    var sum = 0;
+    var childI = 0;
+    var childSize = nodeI.length;
+    for (childI = 0; childI < childSize; childI++) 
+        sum += nodeI[childI]["size"];
+    nodeI.sum = sum;
+};
+node.rankPar = function () {
+    function sortBySum (a, b) {
+        return b["sum"] - a["sum"];
+    }
+    node.sort(sortBySum);
+};
+node.rankChild = function (nodeI) {
+    function sortBySize (a, b) {
+        return b["size"] - a["size"];
+    }
+    nodeI.sort(sortBySize);
+};
+node.zoom = function () {
+    var zoomRatio = 1 / node["sum"] * canvas["width"] * canvas["height"];
+    node.iter(function (nodeI) {
+        nodeI["sum"] *= zoomRatio;
+        nodeI.iter(function (nodeCI) {
+            nodeCI["size"] *= zoomRatio;
+        });
+    });
+    // node["sum"] *= zoomRatio;
+    // alert("nodesum: " + node["sum"]);
+};
+node.createPar = function () {
+    var nodePar = [];
+    var nI;
+    for (nI = 0; nI < node.length; nI++) {
+    	nodePar.push({name: nI, size: node[nI]["sum"]});
+    }
+    return nodePar;
+};
+
+var nodeRect = function (pos_size, color) {
+    if (!pos_size) { alert("don't have pos_size"); return null;}
+
+    var that = {};
+    
+    // that.getX = function () {
+    // 	return pos_size["x"];
+    // }
+    // that.getY = function () {
+    // 	return pos_size["y"];
+    // }
+    // that.getWidth = function () {
+    // 	return pos_size["w"];
+    // }
+    // that.getHeight = function () {
+    // 	return pos_size["h"];
+    // }
+    // that.getPosSize = function () {
+    //     return pos_size;
+    // }; 
+    that.drawRect = function () {
+    	if (!color) alert("don't have color");
+    	canvas["ctx"].fillStyle = color;
+    	canvas["ctx"].fillRect(pos_size["x"], pos_size["y"], pos_size["w"], pos_size["h"]);
+    };
+
+    return that;
+};
+var nodeChild = function (pos_size, name, fillcolor, margincolor) {
+	if (!pos_size) return null;
+    
+    var ctx = canvas["ctx"];
+	var x = pos_size["x"];
+	var y = pos_size["y"];
+	var w = pos_size["w"];
+	var h = pos_size["h"];
+	
+	var that = nodeRect(pos_size, fillcolor);
+
+	that.drawText = function () {
+	    ctx.fillStyle = "black";
+	    ctx.fillText(name, x + 3, y + 15);
+	}
+	that.drawMargin = function () {
+        if (!margincolor) margincolor = "white";
+        ctx.strokeStyle = margincolor;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + w, y);
+        ctx.lineTo(x + w, y + h);
+        ctx.lineTo(x, y + h);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+	}
+
+	return that;
+};
+
+
+var divideWhiteArea = function (area, nodes) {
+    
+    var whiteArea = area;
+    var treeMap = [];   
+    var storage = [];
+    var aspectRatio = Number.MAX_VALUE;
+    var nI;
+
+    var divideSide = function () {
+    	return whiteArea["w"] > whiteArea["h"] ? "h" : "w";
+    };
+
+    var getSum = function () {
+    	var i;
+        var sum = 0;
+        for (i = 0; i < storage.length; i++) sum += storage[i]["size"];
+        return sum;
+    };
+   
+    var getPublicEdge = function () {
+        return getSum() / whiteArea[divideSide()];
+    };
+
+    var getAspectRatio = function () {
+        var a = getPublicEdge();
+        var b = storage[storage.length - 1]["size"] / a;
+        return a > b ? a / b : b / a;
+    };
+
+    var moveStorage = function () {
+        var storSum = getSum();
+        var ds = divideSide();
+        var pubE = getPublicEdge();
+        var selE = [];
+        storage.loop(function (stoI, index) {
+            selE[index] = stoI["size"] / pubE;
+        });
+        var pubC = (ds == "w") ? whiteArea["y"] : whiteArea["x"];
+        var selC = [];
+        storage.loop(function (stoI, index) {
+            if (!index)
+                selC[0] = (ds == "w") ? whiteArea["x"] : whiteArea["y"];
+            else 
+                selC[index] = selC[index - 1] + selE[index - 1];
+        });
+        var createTMnode = function (stoI, index) {
+            if (ds == "w")
+                var newTMnode = 
+                    {name: stoI["name"], x: selC[index], y: pubC,
+                     w: selE[index], h: pubE};
+            else 
+            	var newTMnode = 
+                    {name: stoI["name"], x: pubC, y: selC[index],
+                     w: pubE, h: selE[index]};
+            treeMap.push(newTMnode);
+        }
+        storage.loop(createTMnode);
+        return pubE;
+    };
+    for (nI = 0; nI < nodes.length; ) {
+        storage.push(nodes[nI]);
+        var testAR = getAspectRatio();
+        var pubE;
+        if (testAR > aspectRatio) {
+            storage.pop();
+            pubE = moveStorage();
+            aspectRatio = Number.MAX_VALUE;
+            storage = [];
+            divideSide() == "w" ? whiteArea["y"] += pubE : whiteArea["x"] += pubE;
+            divideSide() == "w" ? whiteArea["h"] -= pubE : whiteArea["w"] -= pubE;
+        } else {
+            if (nI + 1 == nodes.length) {
+                moveStorage();
+                return treeMap;
+            }
+            else {
+                nI++;
+                aspectRatio = testAR;
+            }
+        }
+    }
+    return treeMap;
+};
+
+var randomColor = function () {
+    var r = Math.floor(Math.random() * 255);
+    var g = Math.floor(Math.random() * 255);
+    var b = Math.floor(Math.random() * 255);
+    return "rgb(" + r + "," + g + "," + b +")";
+}
+
+var draw = function(newNode) {
+	newNode.drawRect();
+	newNode.drawText();
+	newNode.drawMargin();
+}
+
+node.loop(node.sumChild, node.rankChild);
+node.sum = (function () {
+    return node.iter(function (a, b) {
+    	return a["sum"] + b;
+    }, 0);
+}());
+node.rankPar();
+node.zoom();
+
+var nodeParent = node.createPar();
+var tempTreeMapPar = 
+    divideWhiteArea({x: 0, y: 0, w: canvas["width"], h: canvas["height"]}, nodeParent);
+
+tempTreeMapPar.iter(function (tmpI) {
+    var xp = tmpI["x"],
+        yp = tmpI["y"],
+        wp = tmpI["w"],
+        hp = tmpI["h"],
+        nodes = node[tmpI["name"]];
+    tmpI.color = randomColor();
+    var tempTreeMapChild = 
+        divideWhiteArea({x: xp, y: yp, w: wp, h: hp}, nodes);
+    tempTreeMapChild.iter(function (tmcI) {
+        var xc = tmcI["x"],
+            yc = tmcI["y"],
+            wc = tmcI["w"],
+            hc = tmcI["h"],
+            namec = tmcI["name"];
+        var newNode = nodeChild({x: xc, y: yc, w: wc, h: hc}, namec, tmpI.color, "white");
+        draw(newNode);
+    });
+});
+
+
+
+
+</script>
+
+</body>
+</html>
